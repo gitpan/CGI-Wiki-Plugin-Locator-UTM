@@ -21,7 +21,7 @@ isa_ok( $locator, "CGI::Wiki::Plugin::Locator::UTM" );
 my %stores = CGI::Wiki::TestConfig::Utilities->stores;
 
 # Skip Postgres for the moment
-$stores{Pg} = '';
+# $stores{Pg} = '';
 
 my ($store_name, $store);
 while ( ($store_name, $store) = each %stores ) {

@@ -3,7 +3,7 @@ package CGI::Wiki::Plugin::Locator::UTM;
 use strict;
 
 use vars qw( $VERSION @ISA );
-$VERSION = '0.01';
+$VERSION = '0.02';
 
 use Carp qw( croak );
 use CGI::Wiki::Plugin;
@@ -41,10 +41,10 @@ ellipsoid, on which the mercator projection is based.
                     );
 
   # Just retrieve the location
-  my ( $east, $north ) = $locator->location( node => "King's Head" );
+  my ( $lat, $long ) = $locator->location( node => "King's Head" );
 
   # or as coordinates
-  my ( $east, $north ) = $locator->coordinates( node => "King's Head" );
+  my ( $zone, $east, $north ) = $locator->coordinates( node => "King's Head" );
 
   # Find the straight-line distance between two nodes, in kilometres.
   my $distance = $locator->distance( from_node => "King's Head",
@@ -241,7 +241,7 @@ sub find_within_distance {
 
     # Postgres is a fussy bugger.
     if ( ref $store eq "CGI::Wiki::Store::Pg" ) {
-        $sql =~ s/([xy]\.metadata_value)/$1::double_precision/gs;
+        $sql =~ s/([xy]\.metadata_value)/$1::float/gs;
     }
     my $node = $args{node} || '';
                 
