@@ -3,7 +3,7 @@ package CGI::Wiki::Plugin::Locator::UTM;
 use strict;
 
 use vars qw( $VERSION @ISA );
-$VERSION = '0.02';
+$VERSION = '0.03';
 
 use Carp qw( croak );
 use CGI::Wiki::Plugin;
@@ -15,13 +15,6 @@ use Geo::Coordinates::UTM;
 =head1 NAME
 
 CGI::Wiki::Plugin::Locator::UTM - A CGI::Wiki plugin to manage international location data.
-
-=head1 DESCRIPTION
-
-This module provides access to the Universal Transverse Mercator 
-international coordinates system. It is a thin wrapper for the module
-L<Geo::Coordinates::UTM>. To use this module, you must specify an 
-ellipsoid, on which the mercator projection is based.
 
 =head1 SYNOPSIS
 
@@ -54,6 +47,13 @@ ellipsoid, on which the mercator projection is based.
   my @others = $locator->find_within_distance( node   => "Albion",
                                                metres => 200 );
 
+=head1 DESCRIPTION
+
+This module provides access to the Universal Transverse Mercator 
+international coordinates system. It is a thin wrapper for the module
+L<Geo::Coordinates::UTM>. To use this module, you must specify an 
+ellipsoid, on which the mercator projection is based.
+
 =head1 METHODS
 
 =over 4
@@ -72,9 +72,9 @@ Note that you can only do coordinate conversion within one ellipsoid.
 =cut
 
 sub new {
-    my ($class, $ellipsoid) = @_;
+    my ( $class, $ellipsoid ) = @_;
     $ellipsoid ||= 'International';
-    my $self = {ellipsoid => $ellipsoid};
+    my $self = { ellipsoid => $ellipsoid };
     bless $self, $class;
     return $self;
 }
@@ -89,11 +89,11 @@ last time the node was written.
 =cut
 
 sub location {
-    my ($self, %args) = @_;
-    my $store = $self->datastore;
+    my ( $self, %args ) = @_;
+    my $store     = $self->datastore;
     my %node_data = $store->retrieve_node( $args{node} );
-    my %metadata  = %{$node_data{metadata}};
-    return ($metadata{lat}[0], $metadata{long}[0]);
+    my %metadata  = %{ $node_data{metadata} };
+    return ( $metadata{lat}[0], $metadata{long}[0] );
 }
 
 =item B<coordinates>
@@ -109,32 +109,34 @@ See L<Geo::Coordinates::UTM> for the meaning of the zone value.
 =cut
 
 sub coordinates {
-    my ($self, %args) = @_;
-    my ($lat,$long,$zone,$east,$north);
+    my ( $self, %args ) = @_;
+    my ( $lat, $long, $zone, $east, $north );
 
-    return @args{qw(zone easting northing)} if exists($args{zone}) && 
-        exists($args{easting}) && 
-        exists($args{northing}); 
+    return @args{qw(zone easting northing)}
+      if exists( $args{zone} )
+      && exists( $args{easting} )
+      && exists( $args{northing} );
 
-    if (exists $args{lat}) {
-        ($lat,$long) = @args{qw/lat long/};
+    if ( exists $args{lat} ) {
+        ( $lat, $long ) = @args{qw/lat long/};
     }
     else {
-        my $store = $self->datastore;
+        my $store     = $self->datastore;
         my %node_data = $store->retrieve_node( $args{node} );
         $lat  = $node_data{metadata}{lat}[0];
         $long = $node_data{metadata}{long}[0];
 
         # Use UTM metadata if it is available
-        $zone = $node_data{metadata}{zone}[0];
-        $east = $node_data{metadata}{easting}[0];
+        $zone  = $node_data{metadata}{zone}[0];
+        $east  = $node_data{metadata}{easting}[0];
         $north = $node_data{metadata}{northing}[0];
     }
-    if (!defined($zone) && !defined($east) && !defined($north)) {
+    if ( !defined($zone) && !defined($east) && !defined($north) ) {
         return undef unless defined($lat) && defined($long);
-        ($zone,$east,$north) = latlon_to_utm($self->{ellipsoid},$lat,$long);
+        ( $zone, $east, $north ) =
+          latlon_to_utm( $self->{ellipsoid}, $lat, $long );
     }
-    ($zone,$east,$north);
+    ( $zone, $east, $north );
 }
 
 =item B<distance>
@@ -161,31 +163,32 @@ rounds down, but if anyone cares about that they can send a patch.
 =cut
 
 sub distance {
-    my ($self, %args) = @_;
+    my ( $self, %args ) = @_;
 
     $args{unit} ||= "kilometres";
 
     # Split off the prefix from_ or to_
-    my (%from,%to);
-    while (my ($arg,$val) = each %args) {
+    my ( %from, %to );
+    while ( my ( $arg, $val ) = each %args ) {
         $from{$1} = $val if $arg =~ /from_(.*)/;
-        $to{$1} = $val if $arg =~ /to_(.*)/;
+        $to{$1}   = $val if $arg =~ /to_(.*)/;
     }
 
     my @from = $self->coordinates(%from);
-    my @to = $self->coordinates(%to);
+    my @to   = $self->coordinates(%to);
 
     return undef unless ( $from[0] and $from[1] and $to[0] and $to[1] );
 
     croak("Locations are in different zones") unless $from[0] eq $to[0];
-    
-    my $metres = int( sqrt(   ($from[1] - $to[1])**2
-                            + ($from[2] - $to[2])**2 ) + 0.5 );
+
+    my $metres =
+      int( sqrt( ( $from[1] - $to[1] )**2 + ( $from[2] - $to[2] )**2 ) + 0.5 );
 
     if ( $args{unit} eq "metres" ) {
         return $metres;
-    } else {
-        return $metres/1000;
+    }
+    else {
+        return $metres / 1000;
     }
 }
 
@@ -210,17 +213,17 @@ if insufficient start point data supplied.
 =cut
 
 sub find_within_distance {
-    my ($self, %args) = @_;
+    my ( $self, %args ) = @_;
 
     my $store = $self->datastore;
     my $dbh = eval { $store->dbh; }
       or croak "find_within_distance is only implemented for database stores";
     my $metres = $args{metres}
-               || ($args{kilometres} * 1000)
-               || croak "Please supply a distance";
-    my ($zone,$sx,$sy) = $self->coordinates(%args);
+      || ( $args{kilometres} * 1000 )
+      || croak "Please supply a distance";
+    my ( $zone, $sx, $sy ) = $self->coordinates(%args);
     croak "Insufficient start location data supplied"
-           unless defined($sx) && defined($sy);
+      unless defined($sx) && defined($sy);
 
     # Only consider nodes within the square containing the circle of
     # radius $distance.  The SELECT DISTINCT is needed because we might
@@ -244,23 +247,33 @@ sub find_within_distance {
         $sql =~ s/([xy]\.metadata_value)/$1::float/gs;
     }
     my $node = $args{node} || '';
-                
+
     my $sth = $dbh->prepare($sql);
-    $sth->execute($sx-$metres,$sx+$metres,$sy-$metres,$sy+$metres,$zone,$node);
+    $sth->execute(
+        $sx - $metres,
+        $sx + $metres,
+        $sy - $metres,
+        $sy + $metres,
+        $zone, $node
+    );
     my @results;
     while ( my ($result) = $sth->fetchrow_array ) {
-        my $dist = $self->distance( from_easting => $sx,
-                                    from_northing => $sy,
-                                    from_zone => $zone,
-				    to_node   => $result,
-				    unit      => "metres" );
-        if ($dist && $dist <= $metres ) {
+        my $dist = $self->distance(
+            from_easting  => $sx,
+            from_northing => $sy,
+            from_zone     => $zone,
+            to_node       => $result,
+            unit          => "metres"
+        );
+        if ( $dist && $dist <= $metres ) {
             push @results, $result;
-	}
+        }
     }
     return @results;
 }
 
+=back
+ 
 =head1 SEE ALSO
 
 =over 4
@@ -290,6 +303,5 @@ This module is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
 
 =cut
-
 
 1;
