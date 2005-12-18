@@ -3,7 +3,7 @@ package CGI::Wiki::Plugin::Locator::UTM;
 use strict;
 
 use vars qw( $VERSION @ISA );
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 use Carp qw( croak );
 use CGI::Wiki::Plugin;
@@ -270,6 +270,123 @@ sub find_within_distance {
         }
     }
     return @results;
+}
+
+=item B<og_config>
+
+  my $config = OpenGuides::Config->new(file => 'wiki.conf');
+  $locator->og_config($config);
+  ...
+  $ellipsoid = $locator->og_config->ellipsoid;
+
+This is a get-and-set method, used in conjunction with the L<OpenGuides> 
+package to make all the information from the configuration available to the
+plugin. 
+
+=cut
+
+sub og_config {
+    my $self = shift;
+
+    if (@_) {
+        my $config = shift;
+        if ($config->geo_handler eq 3) {
+            $self->{ellipsoid} = $config->ellipsoid;
+        }
+        $self->{og_config} = $config;
+    }
+    $self->{og_config};
+}
+
+=item B<pre_write>
+
+  $ap->despatch( 'pre_write', $node, $content, \%metadata );
+
+This is a L<CGI::Wiki::AutoPlugin> compatible method, which should be called
+before committing data to the wiki store. This performs the necessary geodata
+convertions needed between coordinate systems. 
+
+This is a refactoring of code in L<OpenGuides::Template> which deals with 
+converting input data into the coordinate system used on a particular guide.
+This pre-write method updates the metadata hash to populate the remaining 
+fields of latitude, longitude, x, y, which are not already populated.
+
+=cut
+
+our @geo_mechanism = (
+    {},
+    {
+        x       => 'os_x',
+        y       => 'os_y',
+        module  => 'Geography::NationalGrid::GB',
+    },
+    {
+        x       => 'osie_x',
+        y       => 'osie_y',
+        module  => 'Geography::NationalGrid::IE',
+    },
+    {
+        x       => 'easting',
+        y       => 'northing',
+        module  => 'Geo::Coordinates::UTM',
+    },
+    ) ;
+    
+
+sub pre_write {
+    my ($self, $node, $content, $metadata) = @_;
+
+    my $config = $self->og_config or croak "No config set";
+    my $geo_handler = $config->geo_handler;
+    my %geo_mech = %{$geo_mechanism[$geo_handler]};
+    
+    # Case 1 : all geodata missing
+
+    return 1 if !exists ($metadata->{latitude}) &&
+                !exists ($metadata->{longitude}) &&
+                !exists ($metadata->{$geo_mech{x}}) &&
+                !exists ($metadata->{$geo_mech{y}});
+                
+    # Case 2 : all geodata present - do no convertions
+
+    return 1 if exists ($metadata->{latitude}) &&
+                exists ($metadata->{longitude}) &&
+                exists ($metadata->{$geo_mech{x}}) &&
+                exists ($metadata->{$geo_mech{y}});
+
+    eval "require $geo_mech{module}";
+
+    if ($geo_handler == 3) {
+        my $lat = $metadata->{latitude}[0];
+        my $long = $metadata->{longitude}[0];
+        if ( $lat && $long ) {
+            my ($zone, $easting, $northing) = 
+                Geo::Coordinates::UTM::latlon_to_utm (
+                        $self->{ellipsoid}, $lat, $long );
+            $easting  =~ s/\..*//; # chop off decimal places
+            $northing =~ s/\..*//; # - metre accuracy enough
+            $metadata->{easting}[0] = $easting;
+            $metadata->{northing}[0] = $northing;
+        }
+    }
+    else {
+        my $x = $metadata->{$geo_mech{x}}[0];
+        my $y = $metadata->{$geo_mech{y}}[0];
+        if ($x && $y) {
+            my $point = $geo_mech{module}->new ( Easting => $x, 
+                                                Northing => $y );
+            $metadata->{latitude}[0]  = sprintf "%.6f", $point->latitude;
+            $metadata->{longitude}[0] = sprintf "%.6f", $point->longitude;
+        }
+        else {
+            my $lat = $metadata->{latitude}[0];
+            my $long = $metadata->{longitude}[0];
+            my $point = $geo_mech{module}->new ( Latitude => $lat, 
+                                                Longitude => $long );
+            $metadata->{$geo_mech{x}}[0] = $point->easting;
+            $metadata->{$geo_mech{y}}[0] = $point->northing;
+        }
+    }
 }
 
 =back
